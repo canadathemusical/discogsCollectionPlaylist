@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 	"time"
 )
@@ -13,6 +14,7 @@ type Flags struct {
 	artist          *string
 	genre           *string
 	recentDays      *int
+	noRandom        *bool
 }
 
 func parseFlags() *Flags {
@@ -30,11 +32,31 @@ func parseFlags() *Flags {
 	flags.recentDays = flag.Int("recent", 0, "filter to releases added in the last N days (e.g., -r 30 for 30 days, 0 means no filter)")
 	flag.IntVar(flags.recentDays, "r", 0, "filter to releases added in the last N days (e.g., -r 30 for 30 days, 0 means no filter)")
 
+	flags.noRandom = flag.Bool("no-random", false, "print all results in order without shuffling or limiting count")
+	flag.BoolVar(flags.noRandom, "nr", false, "print all results in order without shuffling or limiting count")
+
 	flag.Parse()
 	return flags
 }
 
-func printReleases(releases []iRelease, count int) {
+func printReleases(releases []iRelease, count int, noRandom bool) {
+	if noRandom {
+		sort.Slice(releases, func(i, j int) bool {
+			di, erri := time.Parse(time.RFC3339, releases[i].DateAdded)
+			dj, errj := time.Parse(time.RFC3339, releases[j].DateAdded)
+			if erri != nil || errj != nil {
+				return false
+			}
+			return di.After(dj)
+		})
+		fmt.Println("Albums found:", len(releases))
+		for i, release := range releases {
+			artist := getArtist(release)
+			album := getAlbum(release)
+			fmt.Printf("%d. %s - %s\n", i+1, artist, album)
+		}
+		return
+	}
 	if count > len(releases) {
 		count = len(releases)
 	}
@@ -166,7 +188,7 @@ func main() {
 	allReleases = handleGenreFilter(allReleases, *flags.genre)
 	allReleases = handleArtistsFilter(allReleases, *flags.artist)
 	allReleases = handleRecentFilter(allReleases, *flags.recentDays)
-	printReleases(allReleases, *flags.numberOfRecords)
+	printReleases(allReleases, *flags.numberOfRecords, *flags.noRandom)
 }
 
 func contains(slice []string, str string) bool {
