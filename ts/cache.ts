@@ -1,5 +1,5 @@
 import { iPagination, iRelease } from "./global.d";
-import fs from "fs";
+import * as fs from "fs";
 
 const getCollectionCache = async () => {
   // open ./cache/collection.json if exists

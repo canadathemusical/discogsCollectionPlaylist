@@ -4,13 +4,17 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
+	"time"
 )
 
 type Flags struct {
 	numberOfRecords *int
 	artist          *string
 	genre           *string
+	recentDays      *int
+	noRandom        *bool
 }
 
 func parseFlags() *Flags {
@@ -25,11 +29,34 @@ func parseFlags() *Flags {
 	flags.genre = flag.String("genre", "", "genre to filter by")
 	flag.StringVar(flags.genre, "g", "", "genre to filter by")
 
+	flags.recentDays = flag.Int("recent", 0, "filter to releases added in the last N days (e.g., -r 30 for 30 days, 0 means no filter)")
+	flag.IntVar(flags.recentDays, "r", 0, "filter to releases added in the last N days (e.g., -r 30 for 30 days, 0 means no filter)")
+
+	flags.noRandom = flag.Bool("no-random", false, "print all results in order without shuffling or limiting count")
+	flag.BoolVar(flags.noRandom, "nr", false, "print all results in order without shuffling or limiting count")
+
 	flag.Parse()
 	return flags
 }
 
-func printReleases(releases []iRelease, count int) {
+func printReleases(releases []iRelease, count int, noRandom bool) {
+	if noRandom {
+		sort.Slice(releases, func(i, j int) bool {
+			di, erri := time.Parse(time.RFC3339, releases[i].DateAdded)
+			dj, errj := time.Parse(time.RFC3339, releases[j].DateAdded)
+			if erri != nil || errj != nil {
+				return false
+			}
+			return di.After(dj)
+		})
+		fmt.Println("Albums found:", len(releases))
+		for i, release := range releases {
+			artist := getArtist(release)
+			album := getAlbum(release)
+			fmt.Printf("%d. %s - %s\n", i+1, artist, album)
+		}
+		return
+	}
 	if count > len(releases) {
 		count = len(releases)
 	}
@@ -120,6 +147,36 @@ func handleArtistsFilter(releases []iRelease, artist string) []iRelease {
 	return filtered
 }
 
+func handleRecentFilter(releases []iRelease, days int) []iRelease {
+	if days <= 0 {
+		return releases
+	}
+
+	filtered := make([]iRelease, 0)
+	cutoffDate := time.Now().AddDate(0, 0, -days)
+
+	for _, release := range releases {
+		// Parse the date_added field (format: "2024-08-28T08:23:35-07:00")
+		dateAdded, err := time.Parse(time.RFC3339, release.DateAdded)
+		if err != nil {
+			// If we can't parse the date, skip this release
+			continue
+		}
+
+		if dateAdded.After(cutoffDate) {
+			filtered = append(filtered, release)
+		}
+	}
+
+	if len(filtered) == 0 {
+		fmt.Printf("No releases found added in the last %d days\n", days)
+		return releases
+	}
+
+	fmt.Printf("Filtered to releases added in the last %d days\n", days)
+	return filtered
+}
+
 // main is the entry point of the program.
 //
 // It retrieves the Discogs collection response for page 1 and prints the pagination result.
@@ -130,7 +187,8 @@ func main() {
 	allReleases := getAllReleases()
 	allReleases = handleGenreFilter(allReleases, *flags.genre)
 	allReleases = handleArtistsFilter(allReleases, *flags.artist)
-	printReleases(allReleases, *flags.numberOfRecords)
+	allReleases = handleRecentFilter(allReleases, *flags.recentDays)
+	printReleases(allReleases, *flags.numberOfRecords, *flags.noRandom)
 }
 
 func contains(slice []string, str string) bool {
